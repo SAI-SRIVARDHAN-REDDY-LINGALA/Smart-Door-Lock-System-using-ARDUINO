@@ -1,5 +1,10 @@
 # Smart Door Lock System using Arduino, Keypad, LCD & Servo Motor
 
+<p align="center">
+  <img src="arduino.png" alt="Thumbnail" width="800">
+</p>
+
+
 ## 📌 Project Overview
 This project demonstrates a **smart door lock system** using an **Arduino UNO**, a **4x4 keypad**, an **LCD display**, a **servo motor**, and a **buzzer**. The user enters a predefined password to unlock the door.
 

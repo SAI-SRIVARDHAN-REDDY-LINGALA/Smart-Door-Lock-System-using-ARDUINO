@@ -1,146 +1,139 @@
-  //SMART LOCK SYSTEM USING ARDUINO,BUZZER,SERVO MOTOR
+// SMART LOCK SYSTEM USING ARDUINO, BUZZER, SERVO MOTOR
 
-
-  //LIBRARIES 
- 
+// LIBRARIES
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <Servo.h>
 #include <Keypad.h>
-  
-          // PINS
 
-  // BUZZER 
-  #define buzzer_pin 11
-  // SERVO MOTOR 
-  #define servo_pin   10
-  //PASSWORD 
-  #define MAX_LENGTH  4
+// PINS
+#define buzzer_pin 11      // BUZZER
+#define servo_pin 10       // SERVO
+#define MAX_LENGTH 4       // PASS LENGTH
 
-  // for keypad will write later in code 
+// VARIABLES
+Servo servo;                          // SERVO OBJ
+LiquidCrystal_I2C lcd(0x27, 16, 2);   // LCD OBJ (I2C:0x27, 16x2)
 
+// PASSWORDS
+const char* passwords[] = {"0123", "1111", "2025"};  // PASS LIST
+const int numPasswords = sizeof(passwords) / sizeof(passwords[0]);
+char entered_pass[MAX_LENGTH + 1];    // ENTERED PASS
 
-          //VARIABLES 
-  //SERVO OBJECT 
-  Servo servo;   // to use servo function(angle,....)
+bool isLocked = true;   // INIT LOCKED
+bool Reenter = true;    // FLAG RE-ENTER
+byte digits = 0;        // DIGIT COUNT
 
-  //LCD  OBJECT 
-  LiquidCrystal_I2C lcd( 0x27, 16, 2); // 0x27 is general adrress ,16 columns, 2 rows (ATRIBUTES)
+// KEYPAD
+const byte ROWS = 4;  
+const byte COLS = 4;
+char keys[ROWS][COLS] = {
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
+};
+byte row_Pins[ROWS] = {9, 8, 7, 6};   // ROW PINS
+byte col_Pins[COLS] = {5, 4, 3, 2};   // COL PINS
+Keypad keypad(makeKeymap(keys), row_Pins, col_Pins, ROWS, COLS);  // KEYPAD OBJ
 
-  //PASSWORD 
-  const char* password = "0123";// pointer for  constant string 
-  char entered_pass[MAX_LENGTH + 1];
+// ---------------- SETUP ----------------
+void setup() {
+  Serial.begin(9600);             // SERIAL
+  pinMode(buzzer_pin, OUTPUT);    // BUZZER PIN
 
-  bool isLocked = true;   //intially door was locked 
-  bool Reenter = true;   // if specific button pressed ,we can enter from start 
-  byte digits = 0;       // no of digits/char entered 
+  servo.attach(servo_pin);        // ATTACH SERVO
+  lockDoor();                      // LOCKED POS
 
+  lcd.init();                     // LCD INIT
+  lcd.backlight();                // LCD BACKLIGHT
+  lcd.print("DOOR LOCK SYSTEM");  // START MSG
+  delay(2000);
+  lcd.clear();
+}
 
-  //KEY PAD 
-
-  const byte ROWS = 4; //NO OF ROWS,COLMNS  
-  const byte COLS = 4;
-
-  char keys[ROWS][COLS] = {  
-    {'1', '2', '3', 'A'},
-    {'4', '5', '6', 'B'},
-    {'7', '8', '9', 'C'},
-    {'*', '0', '#', 'D'}
-  };  //KEYPAD LAYOUT  
-
-  byte row_Pins[ROWS] = {9, 8, 7, 6};   //PINS CONNECTIONS FOR ROWS,COLMNS
-  byte col_Pins[COLS] = {5, 4, 3, 2};
-
-  Keypad keypad(makeKeymap(keys), row_Pins, col_Pins, ROWS, COLS);   // KEYPAD OBJECT TO READ INPUT 
-
-
-
-
-         //SETUP (INITIALISATIONS)
-
-void setup(){
-      Serial.begin(9600);   // for serial monitor to initialise 
-
-      pinMode(buzzer_pin,OUTPUT);    
-
-      servo.attach(servo_pin);
-      servo.write (50);    // LOCKED ---> 50
-
-      lcd.init();             // intialising lcd I2c comm,.......
-      lcd.backlight();        // ON BACKLIGHT TO DISPLAY 
-      lcd.print("DOOR LOCK SYSTEM");   // GLANCE OF PROJECT FOR 2sec 
-      delay(2000);
-      lcd.clear();
+// ---------------- LOOP ----------------
+void loop() {
+  if (Reenter) {                  // ASK FOR PASS
+    lcd.setCursor(0, 0);
+    lcd.print("ENTER PASSWORD");
+    Reenter = false;
   }
 
-
-
-           //MAIN LOOP 
-void loop(){ 
-
-      if(Reenter){     //TAKE INPUT FROM START 
-        lcd.setCursor(0 ,0);
-        lcd.print("ENTER PASSWORD");
-        Reenter = false;   //TO AVOID UNNECCESARY INPUT 
-      }
-
-    char key = keypad.getKey();   // THESE KEYBOARD FUNCTION TAKES USER INPUTS
-    if (key){     // TRUE IF KEY IS PRESSED 
-        process_key(key);
-    }
-
+  char key = keypad.getKey();     // GET KEY
+  if (key) {
+    process_key(key);             // PROCESS INPUT
+  }
 }
 
-void process_key(char key){    // TO CHECK KEY -->PASSWORD/NOT/RESET 
-    if(key == 'C'){     //RESET
-       reset_Password();
+// ---------------- PROCESS KEYS ----------------
+void process_key(char key) {
+  if (key == 'C') {               // RESET
+    reset_Password();
+  }
+  else if (digits < MAX_LENGTH) { // STORE KEY
+    entered_pass[digits++] = key;
+    lcd.setCursor(digits + 4, 1);
+    lcd.print("*");             // MASK
+
+    if (digits == MAX_LENGTH) {   // CHECK PASS
+      checkPassword();
     }
-
-    else if(digits < MAX_LENGTH){  // STORING AND CHECKING  PASSWORD 
-      entered_pass[digits++]=key;   
-      lcd.setCursor(digits + 4, 1);    
-      lcd.print(" * ");    // FOR PRIVACY 
-
-     if(digits == MAX_LENGTH){  // TO CHECK PASSWORD 
-       check_Password();
-     }
-
-    }
-
+  }
 }
 
+// ---------------- CHECK PASSWORD ----------------
+void checkPassword() {
+  entered_pass[digits] = '\0';    // END STRING
+  lcd.clear();
 
+  bool isValid = false;           // MATCH FLAG
+  for (int i = 0; i < numPasswords; i++) {
+    if (strcmp(entered_pass, passwords[i]) == 0) {
+      isValid = true;
+      break;
+    }
+  }
 
-void check_Password(){      // CHECKS PASSWORD 
-      entered_pass[digits]='\0'; // TO MAKE IT STRING 
-      lcd.clear();
+  if (isValid) {                  // CORRECT PASS
+    isLocked = !isLocked;         // TOGGLE
+    servo.write(isLocked ? 50 : 110); // SERVO MOVE
+    buzz(1);                      // 1 BUZZ
 
-      if(strcmp(entered_pass,password)==0){  // IF CORRECT PASSWORD 
-            isLocked=!isLocked;
-            servo.write(isLocked ? 50 : 110);  //ROTATES 
-            buzz(1);  
-      }else{
-        buzz(3);
-        lcd.print(" WRONG PASSWORD ");  
-        
-      }
-  
-  delay(1000);
-  reset_Password();   // FOR NEXT TRY 
+    lcd.setCursor(0, 0);
+    lcd.print("ACCESS GRANTED");  // MSG
+    lcd.setCursor(0, 1);
+    lcd.print(isLocked ? "DOOR LOCKED" : "DOOR UNLOCKED");
+  }
+  else {                          // WRONG PASS
+    buzz(3);                      // 3 BUZZ
+    lcd.setCursor(0, 0);
+    lcd.print("ACCESS DENIED");   // MSG
+    lcd.setCursor(0, 1);
+    lcd.print("WRONG PASSWORD");
+  }
 
+  delay(1500);
+  reset_Password();               // RESET
 }
 
-
-void reset_Password(){
+// ---------------- RESET PASSWORD ----------------
+void reset_Password() {
   digits = 0;
-  lcd.clear();  // Clear LCD
-  memset(entered_pass, 0, sizeof( entered_pass)); // Clear  PREVIOUS entered password 
-  Reenter = true;  // Request LCD update
+  
+  lcd.clear();                    // CLEAR LCD
+  lcd.setCursor(0, 0);
+  lcd.print("RESETTING...");      // SHOW RESET MSG
+  delay(800);                     // SHORT DELAY TO SHOW MESSAGE
+  
+  memset(entered_pass, 0, sizeof(entered_pass));  // CLEAR BUF
+  Reenter = true;                 // READY AGAIN
+  lcd.clear();                    // CLEAR LCD AFTER RESET
 }
 
-
-void buzz(int times){ // BUZZER FUNCTION TO RING BASED ON RIGHT OR WRONG PASSWORD 
-   for (int i = 0; i < times; i++) {
+// ---------------- BUZZER ----------------
+void buzz(int times) {
+  for (int i = 0; i < times; i++) {
     digitalWrite(buzzer_pin, HIGH);
     delay(100);
     digitalWrite(buzzer_pin, LOW);
@@ -149,14 +142,8 @@ void buzz(int times){ // BUZZER FUNCTION TO RING BASED ON RIGHT OR WRONG PASSWOR
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
+void lockDoor(){                      // Lock initially  
+  servo.write(50);  
+  lcd.clear();  
+  lcd.print("LOCKED");  
+}
